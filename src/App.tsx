@@ -224,6 +224,7 @@ export default function App() {
     touchStartPos.current = null;
   };
   const [contactSearchText, setContactSearchText] = useState('');
+  const [chatSearchText, setChatSearchText] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [fbUser, setFbUser] = useState<FirebaseUser | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -1348,12 +1349,23 @@ export default function App() {
                 <p className="text-white/40 font-bold text-[10px] sm:text-[11px] uppercase tracking-[0.2em]">6 Unread Messages</p>
               </div>
               <div className="flex items-center space-x-4" onClick={e => e.stopPropagation()}>
-                <button className="p-3 bg-white/5 border border-white/10 rounded-2xl text-white/60 hover:text-white transition-all">
-                  <Search size={22} />
-                </button>
                 <button className="p-3 bg-imo-blue text-white rounded-2xl shadow-xl shadow-imo-blue/20 hover:scale-105 transition-all">
                   <Plus size={22} />
                 </button>
+              </div>
+            </div>
+
+            {/* Search Bar */}
+            <div className="px-8 mb-6">
+              <div className="relative group">
+                <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-imo-blue transition-colors" size={20} />
+                <input 
+                  type="text"
+                  placeholder="Search name or message..."
+                  value={chatSearchText}
+                  onChange={(e) => setChatSearchText(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-[24px] py-4 pl-14 pr-6 text-white text-sm focus:ring-4 focus:ring-imo-blue/20 focus:bg-white/10 outline-none transition-all placeholder:text-white/20"
+                />
               </div>
             </div>
 
@@ -1427,7 +1439,13 @@ export default function App() {
 
             {/* Chat List */}
             <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-32 scrollbar-none">
-              {syncedContacts.map((contact) => (
+              {syncedContacts
+                .filter(contact => {
+                  const query = chatSearchText.toLowerCase();
+                  return contact.name.toLowerCase().includes(query) || 
+                         (contact.lastMessage && contact.lastMessage.toLowerCase().includes(query));
+                })
+                .map((contact) => (
                 <motion.div
                   key={contact.id}
                   whileHover={{ scale: 1.02, x: 5 }}
