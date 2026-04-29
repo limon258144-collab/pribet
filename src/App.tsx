@@ -1604,6 +1604,17 @@ export default function App() {
                         className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
                       >
                         <div className={`max-w-[85%] sm:max-w-[70%] ${isMe ? 'items-end' : 'items-start'} flex flex-col relative group`}>
+                            {/* Hover Reaction Button */}
+                            <button 
+                              onClick={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setReactionMenu({ messageId: msg.id, x: rect.left, y: rect.top });
+                              }}
+                              className={`absolute ${isMe ? '-left-10' : '-right-10'} top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/5 opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10 text-white/40 hover:text-white hidden sm:block z-20`}
+                            >
+                              <Smile size={18} />
+                            </button>
+
                             <div 
                               onMouseDown={(e) => handleLongPressStart(msg.id, e)}
                               onMouseUp={handleLongPressEnd}
@@ -1686,18 +1697,28 @@ export default function App() {
                               
                               {/* Reactions Badge */}
                               {msg.reactions && msg.reactions.length > 0 && (
-                                <div className={`absolute -bottom-3 ${isMe ? 'right-0' : 'left-0'} flex items-center bg-[#1A1F2E]/80 backdrop-blur-xl border border-white/10 rounded-full px-2 py-1 space-x-1 shadow-2xl z-10 transition-all scale-110 ring-2 ring-black/20`}>
+                                <motion.div 
+                                  initial={{ scale: 0, opacity: 0 }}
+                                  animate={{ scale: 1, opacity: 1 }}
+                                  className={`absolute -bottom-3 ${isMe ? 'right-4' : 'left-4'} flex items-center bg-[#1A1F2E] border border-white/20 rounded-full px-2.5 py-1 space-x-1 shadow-[0_4px_15px_rgba(0,0,0,0.4)] z-10 hover:scale-110 transition-transform cursor-default select-none group/reactions`}
+                                >
                                   {msg.reactions.map((emoji, i) => (
-                                    <motion.span 
-                                      initial={{ scale: 0 }}
-                                      animate={{ scale: 1 }}
+                                    <span 
                                       key={i} 
-                                      className="text-xs drop-shadow-sm"
+                                      className="text-[13px] drop-shadow-sm hover:scale-125 transition-transform"
+                                      title="Remove reaction"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleAddReaction(msg.id, emoji);
+                                      }}
                                     >
                                       {emoji}
-                                    </motion.span>
+                                    </span>
                                   ))}
-                                </div>
+                                  {msg.reactions.length > 1 && (
+                                    <span className="text-[9px] font-black text-white/40 pl-0.5">{msg.reactions.length}</span>
+                                  )}
+                                </motion.div>
                               )}
                             </div>
                             <span className="text-[10px] text-white/30 mt-3 px-1 font-bold tracking-tight flex items-center">
