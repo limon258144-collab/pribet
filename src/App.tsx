@@ -56,7 +56,9 @@ import {
   Share2,
   Monitor,
   Clapperboard,
-  Film
+  Film,
+  Globe,
+  MessageCircle
 } from 'lucide-react';
 import { Contact, Message } from './types';
 import { INITIAL_CONTACTS, MOCK_MESSAGES } from './mockData';
@@ -72,7 +74,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, query, collection, where, getDocs, onSnapshot, updateDoc, limit } from 'firebase/firestore';
 
 const GALLERY_IMAGES = [
   'https://picsum.photos/seed/travel/800/600',
@@ -240,6 +242,61 @@ export default function App() {
   const [discoverSearch, setDiscoverSearch] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Contact[]>([]);
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
+
+  // Global Search Logic
+  useEffect(() => {
+    const searchGlobalUsers = async () => {
+      if (contactSearchText.length < 3) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearchingGlobal(true);
+      try {
+        const q = query(
+          collection(db, 'users'),
+          where('username', '>=', contactSearchText.toLowerCase()),
+          where('username', '<=', contactSearchText.toLowerCase() + '\uf8ff'),
+          limit(5)
+        );
+        const snapshot = await getDocs(q);
+        const users = snapshot.docs
+          .map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              name: data.displayName || 'Imo User',
+              avatar: data.photoURL || `https://picsum.photos/seed/${doc.id}/600/600`,
+              status: 'online',
+              statusMessage: data.status || 'Available',
+              username: data.username
+            } as Contact;
+          })
+          .filter(u => u.id !== fbUser?.uid); // Don't show current user
+
+        setSearchResults(users);
+      } catch (err) {
+        console.error("Global search error:", err);
+      } finally {
+        setIsSearchingGlobal(false);
+      }
+    };
+
+    const timeoutId = setTimeout(searchGlobalUsers, 500);
+    return () => clearTimeout(timeoutId);
+  }, [contactSearchText, fbUser]);
+
+  const handleStartChat = (contact: Contact) => {
+    // If contact is not in syncedContacts, add it
+    if (!syncedContacts.find(c => c.id === contact.id)) {
+      setSyncedContacts(prev => [contact, ...prev]);
+    }
+    setSelectedContact(contact);
+    setActiveView('chats');
+    setContactSearchText('');
+  };
+
   const [callStatus, setCallStatus] = useState<'connecting' | 'active'>('connecting');
   const [connectionProgress, setConnectionProgress] = useState(0);
   const [connectionStage, setConnectionStage] = useState('Initializing');
@@ -2244,72 +2301,147 @@ export default function App() {
             </div>
 
             {/* Contacts List */}
-            <div className="flex-1 overflow-y-auto px-10 space-y-1 pb-32 custom-scrollbar">
-              {syncedContacts
-                .filter(c => c.name.toLowerCase().includes(contactSearchText.toLowerCase()))
-                .map((contact) => (
-                  <motion.div
-                    key={contact.id}
-                    whileHover={{ x: 8, backgroundColor: 'rgba(255, 255, 255, 0.04)' }}
-                    onClick={() => {
-                      setSelectedContact(contact);
-                      setActiveView('chats');
-                    }}
-                    className="flex items-center space-x-6 p-6 rounded-[2.5rem] border border-transparent hover:border-white/5 transition-all cursor-pointer group"
-                  >
-                    <div className="relative flex-shrink-0">
-                      <div className="absolute inset-0 bg-imo-blue rounded-[2.2rem] blur-2xl opacity-0 group-hover:opacity-20 transition-opacity"></div>
-                      <img 
-                        src={contact.avatar} 
-                        className="w-18 h-18 rounded-[2.2rem] object-cover border-[5px] border-white/5 relative z-10 shadow-2xl" 
-                        alt={contact.name} 
-                        referrerPolicy="no-referrer" 
-                      />
-                      <div className={`absolute -bottom-1 -right-1 w-7 h-7 border-[5px] border-[#0A0D14] rounded-full z-20 shadow-xl transition-colors duration-500 ${
-                        contact.status === 'online' ? 'bg-accent-green shadow-[0_0_10px_rgba(74,222,128,0.5)]' : 
-                        contact.status === 'away' ? 'bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 
-                        'bg-white/10'
-                      }`} />
-                    </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-2xl font-black text-white group-hover:text-imo-blue transition-all truncate tracking-tight">
-                        {contact.name}
-                      </h3>
-                      <div className="flex items-center space-x-2 mt-1.5">
-                        {contact.status === 'online' ? (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-2 h-2 rounded-full bg-accent-green shadow-[0_0_5px_rgba(74,222,128,0.8)]"></div>
-                            <span className="text-accent-green text-[11px] font-black uppercase tracking-[0.2em] opacity-80">Active Now</span>
+            <div className="flex-1 overflow-y-auto px-10 space-y-8 pb-32 custom-scrollbar">
+              {/* Local Contacts */}
+              <div>
+                <h4 className="text-[10px] font-black text-white/20 uppercase tracking-[0.4em] mb-6 pl-6 flex items-center">
+                  <User size={12} className="mr-3" />
+                  My Contacts
+                </h4>
+                <div className="space-y-1">
+                  {syncedContacts
+                    .filter(c => c.name.toLowerCase().includes(contactSearchText.toLowerCase()))
+                    .map((contact) => (
+                      <motion.div
+                        key={contact.id}
+                        whileHover={{ x: 8, backgroundColor: 'rgba(255, 255, 255, 0.04)' }}
+                        onClick={() => {
+                          setSelectedContact(contact);
+                          setActiveView('chats');
+                        }}
+                        className="flex items-center space-x-6 p-6 rounded-[2.5rem] border border-transparent hover:border-white/5 transition-all cursor-pointer group"
+                      >
+                        <div className="relative flex-shrink-0">
+                          <div className="absolute inset-0 bg-imo-blue rounded-[2.2rem] blur-2xl opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                          <img 
+                            src={contact.avatar} 
+                            className="w-18 h-18 rounded-[2.2rem] object-cover border-[5px] border-white/5 relative z-10 shadow-2xl" 
+                            alt={contact.name} 
+                            referrerPolicy="no-referrer" 
+                          />
+                          <div className={`absolute -bottom-1 -right-1 w-7 h-7 border-[5px] border-[#0A0D14] rounded-full z-20 shadow-xl transition-colors duration-500 ${
+                            contact.status === 'online' ? 'bg-accent-green shadow-[0_0_10px_rgba(74,222,128,0.5)]' : 
+                            contact.status === 'away' ? 'bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 
+                            'bg-white/10'
+                          }`} />
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-2xl font-black text-white group-hover:text-imo-blue transition-all truncate tracking-tight">
+                            {contact.name}
+                          </h3>
+                          <div className="flex items-center space-x-2 mt-1.5">
+                            {contact.status === 'online' ? (
+                              <div className="flex items-center space-x-2">
+                                <div className="w-2 h-2 rounded-full bg-accent-green shadow-[0_0_5px_rgba(74,222,128,0.8)]"></div>
+                                <span className="text-accent-green text-[11px] font-black uppercase tracking-[0.2em] opacity-80">Active Now</span>
+                              </div>
+                            ) : contact.status === 'away' ? (
+                              <div className="flex items-center space-x-2">
+                                <div className="w-2 h-2 rounded-full bg-yellow-500 shadow-[0_0_5px_rgba(234,179,8,0.8)]"></div>
+                                <span className="text-yellow-500 text-[11px] font-black uppercase tracking-[0.2em] opacity-80">Away</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center space-x-2">
+                                <div className="w-2 h-2 rounded-full bg-white/20"></div>
+                                <span className="text-white/30 text-[11px] font-bold tracking-[0.05em]">
+                                  {contact.lastSeen 
+                                    ? `Last seen ${new Date(contact.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}` 
+                                    : 'Offline'}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        ) : contact.status === 'away' ? (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-2 h-2 rounded-full bg-yellow-500 shadow-[0_0_5px_rgba(234,179,8,0.8)]"></div>
-                            <span className="text-yellow-500 text-[11px] font-black uppercase tracking-[0.2em] opacity-80">Away</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-2 h-2 rounded-full bg-white/20"></div>
-                            <span className="text-white/30 text-[11px] font-bold tracking-[0.05em]">
-                              {contact.lastSeen 
-                                ? `Last seen ${new Date(contact.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}` 
-                                : 'Offline'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                        </div>
 
-                    <div className="hidden group-hover:flex items-center space-x-3 pr-2">
-                      <button className="w-14 h-14 bg-white/5 text-white/40 hover:text-imo-blue hover:bg-imo-blue/10 rounded-2xl transition-all flex items-center justify-center border border-white/5">
-                        <Phone size={22} />
-                      </button>
-                      <button className="w-14 h-14 bg-white/5 text-white/40 hover:text-imo-blue hover:bg-imo-blue/10 rounded-2xl transition-all flex items-center justify-center border border-white/5">
-                        <Video size={22} />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
+                        <div className="hidden group-hover:flex items-center space-x-3 pr-2">
+                          <button className="w-14 h-14 bg-white/5 text-white/40 hover:text-imo-blue hover:bg-imo-blue/10 rounded-2xl transition-all flex items-center justify-center border border-white/5">
+                            <Phone size={22} />
+                          </button>
+                          <button className="w-14 h-14 bg-white/5 text-white/40 hover:text-imo-blue hover:bg-imo-blue/10 rounded-2xl transition-all flex items-center justify-center border border-white/5">
+                            <Video size={22} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                </div>
+              </div>
+
+              {/* Global Search Results */}
+              {(contactSearchText.length >= 3 || searchResults.length > 0) && (
+                <div className="pt-4 border-t border-white/5">
+                  <h4 className="text-[10px] font-black text-imo-blue uppercase tracking-[0.4em] mb-6 pl-6 flex items-center">
+                    <Globe size={12} className="mr-3" />
+                    Global Search Results
+                  </h4>
+                  <div className="space-y-1">
+                    {isSearchingGlobal ? (
+                      <div className="flex items-center justify-center py-12 space-x-4">
+                        <div className="w-2 h-2 bg-imo-blue rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-imo-blue rounded-full animate-bounce delay-100"></div>
+                        <div className="w-2 h-2 bg-imo-blue rounded-full animate-bounce delay-200"></div>
+                        <p className="text-imo-blue text-[10px] font-black uppercase tracking-widest pl-2">Searching Network...</p>
+                      </div>
+                    ) : searchResults.filter(u => !syncedContacts.find(sc => sc.id === u.id)).length > 0 ? (
+                      searchResults
+                        .filter(u => !syncedContacts.find(sc => sc.id === u.id))
+                        .map((user) => (
+                        <motion.div
+                          key={user.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          whileHover={{ x: 8, backgroundColor: 'rgba(0, 132, 255, 0.05)' }}
+                          onClick={() => handleStartChat(user)}
+                          className="flex items-center space-x-6 p-6 rounded-[2.5rem] border border-transparent hover:border-imo-blue/20 transition-all cursor-pointer group"
+                        >
+                          <div className="relative flex-shrink-0">
+                            <img 
+                              src={user.avatar} 
+                              className="w-18 h-18 rounded-[2.2rem] object-cover border-[5px] border-white/5 relative z-10 shadow-xl" 
+                              alt={user.name} 
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute -bottom-1 -right-1 w-7 h-7 border-[5px] border-[#0A0D14] bg-accent-green rounded-full z-20 shadow-xl shadow-accent-green/30" />
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-2xl font-black text-white group-hover:text-imo-blue transition-all truncate tracking-tight flex items-center">
+                              {user.name}
+                              <span className="ml-3 px-2 py-0.5 bg-imo-blue/10 text-imo-blue text-[9px] font-black rounded uppercase tracking-tighter">Verified</span>
+                            </h3>
+                            <p className="text-white/30 text-[11px] font-bold tracking-[0.05em] mt-1.5 flex items-center">
+                              @{user.username || 'user'} • Free to chat
+                            </p>
+                          </div>
+                          
+                          <div className="opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0 pr-6">
+                            <button className="flex items-center space-x-3 px-6 py-3 bg-imo-blue text-white rounded-2xl shadow-lg shadow-imo-blue/20">
+                               <Plus size={18} />
+                               <span className="text-[10px] font-black uppercase tracking-widest">Connect</span>
+                            </button>
+                          </div>
+                        </motion.div>
+                      ))
+                    ) : (
+                      contactSearchText.length >= 3 && (
+                        <div className="text-center py-12">
+                          <p className="text-white/20 text-sm font-bold tracking-tight">No global users found for "{contactSearchText}"</p>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
