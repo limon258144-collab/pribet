@@ -1,0 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-imo-blue: #0084ff;
+  --color-glass: rgba(255, 255, 255, 0.12);
+  --color-glass-border: rgba(255, 255, 255, 0.25);
+  --color-accent-green: #4ade80;
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased text-white min-h-screen;
+    background-color: #0c0e14;
+  }
+
+  /* Frosted Glass Background */
+  .frosted-bg {
+    background: 
+      radial-gradient(circle at 10% 20%, rgba(0, 132, 255, 0.4) 0%, transparent 40%),
+      radial-gradient(circle at 90% 80%, rgba(74, 222, 128, 0.3) 0%, transparent 40%),
+      linear-gradient(135deg, #0c0e14 0%, #1a1f2e 100%);
+  }
+
+  .glass-panel {
+    @apply bg-glass backdrop-blur-xl border border-glass-border;
+  }
+
+  /* Custom Scrollbar for Dark Glass */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-white/10 rounded-full hover:bg-imo-blue/40 border-2 border-transparent bg-clip-content;
+  }
+  .custom-scrollbar:hover::-webkit-scrollbar-thumb {
+    @apply bg-white/20;
+  }
+}
+

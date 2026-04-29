@@ -1,0 +1,58 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // 1. User Profiles
+    match /users/{userId} {
+      function isValidUser(data) {
+        return (data.get('uid', request.auth.uid) == request.auth.uid)
+          && (data.get('displayName', '') is string && data.get('displayName', '').size() <= 100)
+          && (data.get('photoURL', '') is string && data.get('photoURL', '').size() <= 300000)
+          && (data.get('username', '') is string)
+          && (data.get('status', '') is string)
+          && (data.get('typingTo', null) == null || (data.typingTo is string && isValidId(data.typingTo)));
+      }
+
+      // Allow getting any profile if signed in. 
+      // Allow listing for search (filtered search is handled by where clauses)
+      allow get, list: if isSignedIn();
+      
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      
+      allow update: if isOwner(userId) 
+        && isValidUser(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'status', 'lastSeen', 'lastUpdated', 'typingTo', 'username']);
+    }
+
+    // 2. Chat Messages
+    match /chats/{chatId}/messages/{messageId} {
+      function isValidMessage(data) {
+        return data.id is string
+          && data.senderId == request.auth.uid
+          && data.status in ['sent', 'delivered', 'read']
+          && data.type in ['text', 'image', 'voice', 'video'];
+      }
+
+      // Allow reading messages if signed in
+      allow list, get: if isSignedIn();
+      
+      allow create: if isSignedIn() && isValidMessage(incoming());
+      
+      allow update: if isSignedIn() 
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reactions'])
+        && (incoming().status == 'read' || incoming().reactions != existing().reactions);
+    }
+  }
+}

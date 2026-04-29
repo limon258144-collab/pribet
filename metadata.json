@@ -1,0 +1,9 @@
+{
+  "name": "imo Web Clone",
+  "description": "A high-fidelity messaging platform clone inspired by imo, featuring real-time chat UI, contact lists, and video call interfaces.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
