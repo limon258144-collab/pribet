@@ -1,5 +1,5 @@
 {
-  "name": "imo Web Clone",
+  "name": "Your Life",
   "description": "A high-fidelity messaging platform clone inspired by imo, featuring real-time chat UI, contact lists, and video call interfaces.",
   "requestFramePermissions": [
     "camera",
