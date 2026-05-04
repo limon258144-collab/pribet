@@ -58,7 +58,9 @@ import {
   Clapperboard,
   Film,
   Globe,
-  MessageCircle
+  MessageCircle,
+  Sliders,
+  Settings2
 } from 'lucide-react';
 import { Contact, Message } from './types';
 import { INITIAL_CONTACTS, MOCK_MESSAGES } from './mockData';
@@ -312,7 +314,6 @@ export default function App() {
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [showCallUI, setShowCallUI] = useState(true);
   const callUIHideTimer = useRef<NodeJS.Timeout | null>(null);
-  const [isUserTypingLocal, setIsUserTypingLocal] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingImages, setEditingImages] = useState<{url: string, filter: string}[]>([]);
   const [activeEditorIndex, setActiveEditorIndex] = useState(0);
@@ -844,37 +845,39 @@ export default function App() {
   }, [fbUser]);
 
   // Sync Local Typing Status to Firestore
+  const [isLocalUserTyping, setIsLocalUserTyping] = useState(false);
+
   useEffect(() => {
     if (!fbUser || !selectedContact) return;
 
     const userRef = doc(db, 'users', fbUser.uid);
-    let timeout: NodeJS.Timeout;
-
-    const updateTypingStatus = async (isTyping: boolean) => {
+    const updateTypingDoc = async (targetId: string | null) => {
       try {
         await updateDoc(userRef, {
-          typingTo: isTyping ? selectedContact.id : null
+          typingTo: targetId
         });
       } catch (err) {
-        handleFirestoreError(err, 'update', `users/${fbUser.uid}`);
+        // Silently fail if session ended
       }
     };
 
-    if (inputText.trim()) {
-      updateTypingStatus(true);
-      
-      // Clear typing status after 3 seconds of inactivity
-      timeout = setTimeout(() => {
-        updateTypingStatus(false);
-      }, 3000);
-    } else {
-      updateTypingStatus(false);
-    }
+    updateTypingDoc(isLocalUserTyping ? selectedContact.id : null);
 
     return () => {
-      clearTimeout(timeout);
+      updateTypingDoc(null);
     };
-  }, [inputText, fbUser, selectedContact?.id]);
+  }, [isLocalUserTyping, fbUser?.uid, selectedContact?.id]);
+
+  useEffect(() => {
+    if (!inputText.trim()) {
+      setIsLocalUserTyping(false);
+      return;
+    }
+
+    setIsLocalUserTyping(true);
+    const timeout = setTimeout(() => setIsLocalUserTyping(false), 3000);
+    return () => clearTimeout(timeout);
+  }, [inputText]);
 
   // Sync Contacts Presence
   useEffect(() => {
@@ -1033,6 +1036,43 @@ export default function App() {
       }
     }
   };
+
+  const switchVideoQuality = async (quality: 'Auto' | '360p' | '720p' | '1080p') => {
+    setVideoQuality(quality);
+    if (!localStream) return;
+
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (!videoTrack) return;
+
+    let constraints: MediaTrackConstraints = {};
+    switch (quality) {
+      case '360p': constraints = { height: { ideal: 360 } }; break;
+      case '720p': constraints = { height: { ideal: 720 } }; break;
+      case '1080p': constraints = { height: { ideal: 1080 } }; break;
+      default: constraints = { height: { ideal: 720 } };
+    }
+
+    try {
+      // @ts-ignore - applyConstraints is not in all TS envs
+      if (videoTrack.applyConstraints) {
+        await videoTrack.applyConstraints(constraints);
+      }
+    } catch (err) {
+      console.warn("Could not apply resolution constraints:", err);
+    }
+  };
+
+  // Prevent accidental call disconnection
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isCalling) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isCalling]);
 
   const handleSearchUser = async () => {
     if (!discoverSearch.trim()) return;
@@ -1590,13 +1630,23 @@ export default function App() {
                   <h3 className="font-black text-white text-lg sm:text-xl leading-none mb-1 tracking-tight">{selectedContact.name}</h3>
                   <div className="flex items-center space-x-2">
                     {selectedContact.isTyping ? (
-                      <motion.span 
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-[10px] font-black text-accent-green uppercase tracking-[0.2em] italic"
+                      <motion.div 
+                        initial={{ opacity: 0, x: -5 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="flex items-center space-x-1"
                       >
-                        Typing...
-                      </motion.span>
+                        <span className="text-[10px] font-black text-accent-green uppercase tracking-[0.2em] italic">Typing</span>
+                        <div className="flex space-x-0.5">
+                          {[0, 1, 2].map((i) => (
+                            <motion.div
+                              key={i}
+                              animate={{ opacity: [0.2, 1, 0.2] }}
+                              transition={{ repeat: Infinity, duration: 1, delay: i * 0.2 }}
+                              className="w-1 h-1 bg-accent-green rounded-full shadow-[0_0_5px_rgba(74,222,128,0.8)]"
+                            />
+                          ))}
+                        </div>
+                      </motion.div>
                     ) : (
                       <>
                         <div className={`w-1.5 h-1.5 rounded-full ${
@@ -2194,10 +2244,6 @@ export default function App() {
                           value={inputText}
                           onChange={(e) => {
                             setInputText(e.target.value);
-                            setIsUserTypingLocal(true);
-                            const timer = (window as any).typingTimer;
-                            if (timer) clearTimeout(timer);
-                            (window as any).typingTimer = setTimeout(() => setIsUserTypingLocal(false), 2000);
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
@@ -3146,6 +3192,48 @@ export default function App() {
                         {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
                       </button>
 
+                      {isCalling === 'video' && (
+                        <div className="relative">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setShowQualityMenu(!showQualityMenu); }}
+                            className={`w-16 h-16 sm:w-20 sm:h-20 rounded-[28px] flex items-center justify-center transition-all ${
+                              showQualityMenu ? 'bg-imo-blue text-white shadow-[0_15px_40px_rgba(0,132,255,0.3)]' : 'bg-white/5 text-white hover:bg-white/10 border border-white/5'
+                            }`}
+                          >
+                            <Sliders size={24} />
+                          </button>
+                          <AnimatePresence>
+                            {showQualityMenu && (
+                              <motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                className="absolute bottom-full mb-6 left-1/2 -translate-x-1/2 bg-[#1A1F2E] border border-white/10 rounded-3xl p-3 shadow-2xl z-50 min-w-[200px]"
+                              >
+                                <div className="space-y-1">
+                                  {(['Auto', '360p', '720p', '1080p'] as const).map((q) => (
+                                    <button
+                                      key={q}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        switchVideoQuality(q);
+                                        setShowQualityMenu(false);
+                                      }}
+                                      className={`w-full flex items-center justify-between px-5 py-3 rounded-2xl transition-all ${
+                                        videoQuality === q ? 'bg-imo-blue text-white' : 'text-white/60 hover:bg-white/5 hover:text-white'
+                                      }`}
+                                    >
+                                      <span className="text-sm font-bold">{q}</span>
+                                      {videoQuality === q && <Check size={16} />}
+                                    </button>
+                                  ))}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )}
+
                       <button 
                         onClick={(e) => { e.stopPropagation(); toggleScreenShare(); }}
                         className={`w-16 h-16 sm:w-20 sm:h-20 rounded-[28px] flex items-center justify-center transition-all ${
@@ -3182,12 +3270,15 @@ export default function App() {
                     exit={{ scale: 0.9, opacity: 0 }}
                     className="glass-panel p-8 rounded-[40px] border border-white/10 w-full max-w-sm text-center shadow-3xl bg-gray-900/90"
                   >
-                    <div className="w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center text-red-500 mx-auto mb-6">
-                      <PhoneOff size={32} />
+                    <div className="w-24 h-24 bg-red-600/20 text-red-500 rounded-[32px] flex items-center justify-center mx-auto mb-8 relative">
+                      <div className="absolute inset-0 bg-red-600/10 rounded-[32px] animate-ping opacity-20" />
+                      <PhoneOff size={40} className="relative z-10" />
                     </div>
-                    <h3 className="text-2xl font-black text-white mb-3">End Call?</h3>
-                    <p className="text-white/40 font-bold text-sm mb-8">Are you sure you want to end the call?</p>
-                    <div className="space-y-3">
+                    <h3 className="text-3xl font-black text-white mb-4 tracking-tight">End Session?</h3>
+                    <p className="text-white/40 font-bold text-base mb-10 leading-relaxed px-4">
+                      Are you sure you want to disconnect? This will end the secure call immediately.
+                    </p>
+                    <div className="space-y-4">
                       <button
                         onClick={() => {
                           setIsCalling(null);
@@ -3196,15 +3287,15 @@ export default function App() {
                           setIsSharingScreen(false);
                           setShowEndCallConfirm(false);
                         }}
-                        className="w-full py-5 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-xs transition-all shadow-xl shadow-red-600/20"
+                        className="w-full py-6 bg-red-600 hover:bg-red-500 text-white rounded-[24px] font-black uppercase tracking-[0.25em] text-[10px] transition-all shadow-[0_20px_50px_rgba(220,38,38,0.3)] active:scale-[0.98]"
                       >
                         End Call
                       </button>
                       <button
                         onClick={() => setShowEndCallConfirm(false)}
-                        className="w-full py-5 bg-white/5 hover:bg-white/10 text-white/60 rounded-2xl font-black uppercase tracking-[0.2em] text-xs transition-all"
+                        className="w-full py-6 bg-white/5 hover:bg-white/10 text-white/50 hover:text-white rounded-[24px] font-black uppercase tracking-[0.25em] text-[10px] transition-all border border-white/5 active:scale-[0.98]"
                       >
-                        Cancel
+                        Keep Talking
                       </button>
                     </div>
                   </motion.div>

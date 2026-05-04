@@ -24,6 +24,7 @@ export interface Contact {
   unreadCount?: number;
   phoneNumber?: string;
   isSynced?: boolean;
+  isTyping?: boolean;
 }
 
 export interface Chat {
